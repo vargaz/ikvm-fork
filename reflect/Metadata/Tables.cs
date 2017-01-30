@@ -2127,6 +2127,81 @@ namespace IKVM.Reflection.Metadata
 		}
 	}
 
+	sealed class EncLogTable : Table<EncLogTable.Record>
+	{
+		internal const int Index = 0x1e;
+
+		internal enum EncFuncCode
+		{
+			Default = 0,
+			AddMethod = 1,
+			AddField = 2,
+			AddParameter = 3,
+			AddProperty = 4,
+			AddEvent = 5
+		}
+
+		internal struct Record
+		{
+			internal int Token;
+			internal EncFuncCode FuncCode;
+		}
+
+		internal override void Read(MetadataReader mr)
+		{
+			for (int i = 0; i < records.Length; i++)
+			{
+				records[i].Token = mr.ReadInt32();
+				records[i].FuncCode = (EncFuncCode)mr.ReadInt32();
+			}
+		}
+
+		internal override void Write(MetadataWriter mw)
+		{
+			for (int i = 0; i < rowCount; i++)
+			{
+				mw.Write(records[i].Token);
+				mw.Write((int)records[i].FuncCode);
+			}
+		}
+
+		protected override int GetRowSize(RowSizeCalc rsc)
+		{
+			return 8;
+		}
+	}
+
+	sealed class EncMapTable : Table<EncMapTable.Record>
+	{
+		internal const int Index = 0x1f;
+
+		internal struct Record
+		{
+			internal int Token;
+		}
+
+		internal override void Read(MetadataReader mr)
+		{
+			for (int i = 0; i < records.Length; i++)
+			{
+				records[i].Token = mr.ReadInt32();
+			}
+		}
+
+		internal override void Write(MetadataWriter mw)
+		{
+			for (int i = 0; i < rowCount; i++)
+			{
+				mw.Write(records[i].Token);
+			}
+		}
+
+		protected override int GetRowSize(RowSizeCalc rsc)
+		{
+			return 4;
+		}
+	}
+
 	sealed class AssemblyTable : Table<AssemblyTable.Record>
 	{
 		internal const int Index = 0x20;

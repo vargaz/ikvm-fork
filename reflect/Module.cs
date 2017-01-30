@@ -145,6 +145,8 @@ namespace IKVM.Reflection
 		internal readonly TypeSpecTable TypeSpec = new TypeSpecTable();
 		internal readonly ImplMapTable ImplMap = new ImplMapTable();
 		internal readonly FieldRVATable FieldRVA = new FieldRVATable();
+		internal readonly EncLogTable EncLog = new EncLogTable ();
+		internal readonly EncMapTable EncMap = new EncMapTable ();
 		internal readonly AssemblyTable AssemblyTable = new AssemblyTable();
 		internal readonly AssemblyRefTable AssemblyRef = new AssemblyRefTable();
 		internal readonly MethodPtrTable MethodPtr = new MethodPtrTable();
@@ -201,6 +203,8 @@ namespace IKVM.Reflection
 			tables[TypeSpecTable.Index] = TypeSpec;
 			tables[ImplMapTable.Index] = ImplMap;
 			tables[FieldRVATable.Index] = FieldRVA;
+			tables[EncLogTable.Index] = EncLog;
+			tables[EncMapTable.Index] = EncMap;
 			tables[AssemblyTable.Index] = AssemblyTable;
 			tables[AssemblyRefTable.Index] = AssemblyRef;
 			tables[MethodPtrTable.Index] = MethodPtr;
