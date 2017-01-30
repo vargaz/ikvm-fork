@@ -87,8 +87,9 @@ namespace IKVM.Reflection.Reader
 		private Dictionary<TypeName, LazyForwardedType> forwardedTypes = new Dictionary<TypeName, LazyForwardedType>();
 		private bool isMetadataOnly;
 		private bool isDelta;
-		internal List<ModuleReader> Deltas;
+		internal List<ModuleReader> deltas;
 		internal Stream ilStream;
+		private Guid encId;
 
 		private sealed class LazyForwardedType
 		{
@@ -634,6 +635,30 @@ namespace IKVM.Reflection.Reader
 		public override Assembly Assembly
 		{
 			get { return assembly; }
+		}
+
+		public bool IsDelta {
+			get {
+				return isDelta;
+			}
+		}
+
+		public Guid EncId {
+			get {
+				if (isDelta) {
+					if (encId == null)
+						encId = GetGuid (ModuleTable.records [0].EncId);
+					return encId;
+				} else {
+					return Guid.Empty;
+				}
+			}
+		}
+
+		public IList<Module> Deltas {
+			get {
+				return deltas.ToArray ();
+			}
 		}
 
 		internal override Type FindType(TypeName typeName)
@@ -1376,12 +1401,27 @@ namespace IKVM.Reflection.Reader
 			get { return (cliHeader.Flags & CliHeader.COMIMAGE_FLAGS_NATIVE_ENTRYPOINT) == 0 ? (int)cliHeader.EntryPointToken : 0; }
 		}
 
+		byte[] MergeStringHeap (byte[] array1, byte[] array2)
+		{
+			// Have to remove the padding at the end of array1
+			// The padding ends at the last string terminating 0
+			int len1 = array1.Length;
+			while (len1 > 2 && array1 [len1 - 1] == '\0' && array1 [len1 - 2] == '\0')
+				len1 --;
+			int newSize = len1 + array2.Length;
+			byte[] res = new byte [newSize];
+			Buffer.BlockCopy (array1, 0, res, 0, len1);
+			Buffer.BlockCopy (array2, 0, res, len1, array2.Length);
+			return res;
+		}
+
 		byte[] MergeByteArrays (byte[] array1, byte[] array2)
 		{
-			int newSize = array1.Length + array2.Length;
+			int len1 = array1.Length;
+			int newSize = len1 + array2.Length;
 			byte[] res = new byte [newSize];
-			Buffer.BlockCopy (array1, 0, res, 0, array1.Length);
-			Buffer.BlockCopy (array2, 0, res, array1.Length, array2.Length);
+			Buffer.BlockCopy (array1, 0, res, 0, len1);
+			Buffer.BlockCopy (array2, 0, res, len1, array2.Length);
 			return res;
 		}
 
@@ -1394,13 +1434,12 @@ namespace IKVM.Reflection.Reader
 
 		internal void AddDelta (ModuleReader delta)
 		{
-			if (Deltas == null)
-				Deltas = new List<ModuleReader> ();
-			Deltas.Add (delta);
+			if (deltas == null)
+				deltas = new List<ModuleReader> ();
+			deltas.Add (delta);
 
 			// Merge heaps
-			// FIXME: Take into account the padding at the end
-			stringHeap = MergeByteArrays (stringHeap, delta.stringHeap);
+			stringHeap = MergeStringHeap (stringHeap, delta.stringHeap);
 			blobHeap = MergeByteArrays (blobHeap, delta.blobHeap);
 			ReadUserStringHeap();
 			delta.ReadUserStringHeap();
@@ -1464,7 +1503,7 @@ namespace IKVM.Reflection.Reader
 							// FIXME: Same for TypeDef.MethodList/FieldList
 							delta.MethodDef.records [table_index [tokenType]].ParamList = MethodDef.records [index].ParamList;
 						}
-						delta.MethodDef.records [table_index [tokenType]].DeltaIndex = Deltas.Count;
+						delta.MethodDef.records [table_index [tokenType]].DeltaIndex = deltas.Count;
 						AddDeltaRecord(MethodDef, index, delta.MethodDef.records[table_index [tokenType]]); break;
 					case EncLogTable.Index:
 					case EncMapTable.Index:

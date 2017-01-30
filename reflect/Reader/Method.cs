@@ -61,7 +61,7 @@ namespace IKVM.Reflection.Reader
 			if (rva == 0)
 				return null;
 			if (module.MethodDef.records[index].DeltaIndex > 0)
-				return new MethodBody(module, module.Deltas[module.MethodDef.records[index].DeltaIndex - 1].ilStream, rva, context);
+				return new MethodBody(module, module.deltas[module.MethodDef.records[index].DeltaIndex - 1].ilStream, rva, context);
 			else
 				return new MethodBody(module, module.GetStream(), module.RvaToFileOffset(rva), context);
 		}
