@@ -86,6 +86,9 @@ namespace IKVM.Reflection.Reader
 		private Dictionary<TypeName, Type> types = new Dictionary<TypeName, Type>();
 		private Dictionary<TypeName, LazyForwardedType> forwardedTypes = new Dictionary<TypeName, LazyForwardedType>();
 		private bool isMetadataOnly;
+		private bool isDelta;
+		internal List<ModuleReader> Deltas;
+		internal Stream ilStream;
 
 		private sealed class LazyForwardedType
 		{
@@ -114,11 +117,13 @@ namespace IKVM.Reflection.Reader
 			}
 		}
 
-		internal ModuleReader(AssemblyReader assembly, Universe universe, Stream stream, string location, bool mapped)
+		internal ModuleReader(AssemblyReader assembly, Universe universe, Stream stream, string location, bool mapped,
+							  Stream ilStream = null)
 			: base(universe)
 		{
 			this.stream = universe != null && universe.MetadataOnly ? null : stream;
 			this.location = location;
+			this.ilStream = ilStream;
 			Read(stream, mapped);
 			if (universe != null && universe.WindowsRuntimeProjection && imageRuntimeVersion.StartsWith("WindowsRuntime ", StringComparison.Ordinal))
 			{
@@ -250,7 +255,9 @@ namespace IKVM.Reflection.Reader
 					tables[i].RowCount = br.ReadInt32();
 				}
 			}
-			MetadataReader mr = new MetadataReader(this, br.BaseStream, HeapSizes);
+			if (((Valid & (1UL << EncLogTable.Index)) != 0) || ((Valid & (1UL << EncMapTable.Index)) != 0))
+				isDelta = true;
+			MetadataReader mr = new MetadataReader(this, br.BaseStream, HeapSizes, !isDelta);
 			for (int i = 0; i < 64; i++)
 			{
 				if ((Valid & (1UL << i)) != 0)
@@ -299,6 +306,11 @@ namespace IKVM.Reflection.Reader
 				throw new InvalidOperationException("Operation not available when UniverseOptions.MetadataOnly is enabled.");
 			}
 			return stream;
+		}
+
+		internal long RvaToFileOffset(int rva)
+		{
+			return peFile.RvaToFileOffset((uint)rva);
 		}
 
 		internal override void GetTypesImpl(List<Type> list)
@@ -393,6 +405,14 @@ namespace IKVM.Reflection.Reader
 			return buf;
 		}
 
+		private void ReadUserStringHeap()
+		{
+			if (lazyUserStringHeap == null)
+			{
+				lazyUserStringHeap = ReadHeap(GetStream(), userStringHeapOffset, userStringHeapSize);
+			}
+		}
+
 		internal override ByteReader GetBlob(int blobIndex)
 		{
 			return ByteReader.FromBlob(blobHeap, blobIndex);
@@ -414,10 +434,7 @@ namespace IKVM.Reflection.Reader
 				{
 					throw TokenOutOfRangeException(metadataToken);
 				}
-				if (lazyUserStringHeap == null)
-				{
-					lazyUserStringHeap = ReadHeap(GetStream(), userStringHeapOffset, userStringHeapSize);
-				}
+				ReadUserStringHeap();
 				int index = metadataToken & 0xFFFFFF;
 				int len = ReadCompressedUInt(lazyUserStringHeap, ref index) & ~1;
 				StringBuilder sb = new StringBuilder(len / 2);
@@ -1080,7 +1097,7 @@ namespace IKVM.Reflection.Reader
 		public override AssemblyName[] __GetReferencedAssemblies()
 		{
 			List<AssemblyName> list = new List<AssemblyName>();
-			for (int i = 0; i < AssemblyRef.records.Length; i++)
+			for (int i = 0; i < AssemblyRef.RowCount; i++)
 			{
 				AssemblyName name = new AssemblyName();
 				name.Name = GetString(AssemblyRef.records[i].Name);
@@ -1357,6 +1374,106 @@ namespace IKVM.Reflection.Reader
 		public override int __EntryPointToken
 		{
 			get { return (cliHeader.Flags & CliHeader.COMIMAGE_FLAGS_NATIVE_ENTRYPOINT) == 0 ? (int)cliHeader.EntryPointToken : 0; }
+		}
+
+		byte[] MergeByteArrays (byte[] array1, byte[] array2)
+		{
+			int newSize = array1.Length + array2.Length;
+			byte[] res = new byte [newSize];
+			Buffer.BlockCopy (array1, 0, res, 0, array1.Length);
+			Buffer.BlockCopy (array2, 0, res, array1.Length, array2.Length);
+			return res;
+		}
+
+		void AddDeltaRecord<T> (Table<T> table, int index, T record) {
+			if (index < table.RowCount)
+				table.records [index] = record;
+			else
+				table.AddRecord (record);
+		}
+
+		internal void AddDelta (ModuleReader delta)
+		{
+			if (Deltas == null)
+				Deltas = new List<ModuleReader> ();
+			Deltas.Add (delta);
+
+			// Merge heaps
+			// FIXME: Take into account the padding at the end
+			stringHeap = MergeByteArrays (stringHeap, delta.stringHeap);
+			blobHeap = MergeByteArrays (blobHeap, delta.blobHeap);
+			ReadUserStringHeap();
+			delta.ReadUserStringHeap();
+			lazyUserStringHeap = MergeByteArrays (lazyUserStringHeap, delta.lazyUserStringHeap);
+
+			// Merge tables
+			// FIXME: Clear caches
+			foreach (var r in delta.EncLog.records) {
+				if (r.FuncCode != EncLogTable.EncFuncCode.Default)
+					throw new NotImplementedException ("" + r.FuncCode);
+			}
+			int[] table_index = new int [64];
+			foreach (var r in delta.EncMap.records) {
+				int token = r.Token;
+				int tokenType = token >> 24;
+				int index = (token & 0xFFFFFF) - 1;
+
+				switch (tokenType) {
+					case ModuleTable.Index: AddDeltaRecord(ModuleTable, index, delta.ModuleTable.records[table_index [tokenType]]); break;
+					case TypeRefTable.Index: AddDeltaRecord(TypeRef, index, delta.TypeRef.records[table_index [tokenType]]); break;
+					case TypeDefTable.Index: AddDeltaRecord(TypeDef, index, delta.TypeDef.records[table_index [tokenType]]); break;
+					case FieldPtrTable.Index: AddDeltaRecord(FieldPtr, index, delta.FieldPtr.records[table_index [tokenType]]); break;
+					case FieldTable.Index: AddDeltaRecord(Field, index, delta.Field.records[table_index [tokenType]]); break;
+					case MemberRefTable.Index: AddDeltaRecord(MemberRef, index, delta.MemberRef.records[table_index [tokenType]]); break;
+					case ConstantTable.Index: AddDeltaRecord(Constant, index, delta.Constant.records[table_index [tokenType]]); break;
+					case CustomAttributeTable.Index: AddDeltaRecord(CustomAttribute, index, delta.CustomAttribute.records[table_index [tokenType]]); break;
+					case FieldMarshalTable.Index: AddDeltaRecord(FieldMarshal, index, delta.FieldMarshal.records[table_index [tokenType]]); break;
+					case DeclSecurityTable.Index: AddDeltaRecord(DeclSecurity, index, delta.DeclSecurity.records[table_index [tokenType]]); break;
+					case ClassLayoutTable.Index: AddDeltaRecord(ClassLayout, index, delta.ClassLayout.records[table_index [tokenType]]); break;
+					case FieldLayoutTable.Index: AddDeltaRecord(FieldLayout, index, delta.FieldLayout.records[table_index [tokenType]]); break;
+					case ParamPtrTable.Index: AddDeltaRecord(ParamPtr, index, delta.ParamPtr.records[table_index [tokenType]]); break;
+					case ParamTable.Index: AddDeltaRecord(Param, index, delta.Param.records[table_index [tokenType]]); break;
+					case InterfaceImplTable.Index: AddDeltaRecord(InterfaceImpl, index, delta.InterfaceImpl.records[table_index [tokenType]]); break;
+					case StandAloneSigTable.Index: AddDeltaRecord(StandAloneSig, index, delta.StandAloneSig.records[table_index [tokenType]]); break;
+					case EventMapTable.Index: AddDeltaRecord(EventMap, index, delta.EventMap.records[table_index [tokenType]]); break;
+					case EventPtrTable.Index: AddDeltaRecord(EventPtr, index, delta.EventPtr.records[table_index [tokenType]]); break;
+					case EventTable.Index: AddDeltaRecord(Event, index, delta.Event.records[table_index [tokenType]]); break;
+					case PropertyMapTable.Index: AddDeltaRecord(PropertyMap, index, delta.PropertyMap.records[table_index [tokenType]]); break;
+					case PropertyPtrTable.Index: AddDeltaRecord(PropertyPtr, index, delta.PropertyPtr.records[table_index [tokenType]]); break;
+					case PropertyTable.Index: AddDeltaRecord(Property, index, delta.Property.records[table_index [tokenType]]); break;
+					case MethodSemanticsTable.Index: AddDeltaRecord(MethodSemantics, index, delta.MethodSemantics.records[table_index [tokenType]]); break;
+					case MethodImplTable.Index: AddDeltaRecord(MethodImpl, index, delta.MethodImpl.records[table_index [tokenType]]); break;
+					case ModuleRefTable.Index: AddDeltaRecord(ModuleRef, index, delta.ModuleRef.records[table_index [tokenType]]); break;
+					case TypeSpecTable.Index: AddDeltaRecord(TypeSpec, index, delta.TypeSpec.records[table_index [tokenType]]); break;
+					case ImplMapTable.Index: AddDeltaRecord(ImplMap, index, delta.ImplMap.records[table_index [tokenType]]); break;
+					case FieldRVATable.Index: AddDeltaRecord(FieldRVA, index, delta.FieldRVA.records[table_index [tokenType]]); break;
+					case AssemblyTable.Index: AddDeltaRecord(AssemblyTable, index, delta.AssemblyTable.records[table_index [tokenType]]); break;
+					case AssemblyRefTable.Index: AddDeltaRecord(AssemblyRef, index, delta.AssemblyRef.records[table_index [tokenType]]); break;
+					case MethodPtrTable.Index: AddDeltaRecord(MethodPtr, index, delta.MethodPtr.records[table_index [tokenType]]); break;
+					case NestedClassTable.Index: AddDeltaRecord(NestedClass, index, delta.NestedClass.records[table_index [tokenType]]); break;
+					case FileTable.Index: AddDeltaRecord(File, index, delta.File.records[table_index [tokenType]]); break;
+					case ExportedTypeTable.Index: AddDeltaRecord(ExportedType, index, delta.ExportedType.records[table_index [tokenType]]); break;
+					case ManifestResourceTable.Index: AddDeltaRecord(ManifestResource, index, delta.ManifestResource.records[table_index [tokenType]]); break;
+					case GenericParamTable.Index: AddDeltaRecord(GenericParam, index, delta.GenericParam.records[table_index [tokenType]]); break;
+					case MethodSpecTable.Index: AddDeltaRecord(MethodSpec, index, delta.MethodSpec.records[table_index [tokenType]]); break;
+					case GenericParamConstraintTable.Index: AddDeltaRecord(GenericParamConstraint, index, delta.GenericParamConstraint.records[table_index [tokenType]]); break;
+					case MethodDefTable.Index:
+						if (index < MethodDef.RowCount) {
+							// The ParamList field is 0, file it out from the original method
+							// FIXME: Added parameters
+							// FIXME: Same for TypeDef.MethodList/FieldList
+							delta.MethodDef.records [table_index [tokenType]].ParamList = MethodDef.records [index].ParamList;
+						}
+						delta.MethodDef.records [table_index [tokenType]].DeltaIndex = Deltas.Count;
+						AddDeltaRecord(MethodDef, index, delta.MethodDef.records[table_index [tokenType]]); break;
+					case EncLogTable.Index:
+					case EncMapTable.Index:
+						break;
+					default:
+						throw new NotImplementedException ();
+				}
+				table_index [tokenType] ++;
+			}
 		}
 
 #if !NO_AUTHENTICODE

@@ -37,7 +37,7 @@ namespace IKVM.Reflection.Writer
 		private readonly byte[] buffer = new byte[8];
 
 		internal MetadataWriter(ModuleBuilder module, Stream stream)
-			: base(module, module.Strings.IsBig, module.Guids.IsBig, module.Blobs.IsBig)
+			: base(module, module.Strings.IsBig, module.Guids.IsBig, module.Blobs.IsBig, true)
 		{
 			this.moduleBuilder = module;
 			this.stream = stream;

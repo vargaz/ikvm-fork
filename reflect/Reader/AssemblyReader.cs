@@ -317,6 +317,12 @@ namespace IKVM.Reflection.Reader
 			return (AssemblyNameFlags)manifestModule.AssemblyTable.records[0].Flags;
 		}
 
+		public override void AddDelta(Stream stream, Stream ilStream)
+		{
+			var r = new ModuleReader (this, universe, stream, null, false, ilStream);
+			manifestModule.AddDelta (r);
+		}
+
 		internal string Name
 		{
 			get { return manifestModule.GetString(manifestModule.AssemblyTable.records[0].Name); }

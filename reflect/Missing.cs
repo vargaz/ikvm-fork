@@ -22,6 +22,7 @@
   
 */
 using System;
+using System.IO;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
 
@@ -227,6 +228,11 @@ namespace IKVM.Reflection
 		}
 
 		public override System.IO.Stream GetManifestResourceStream(string resourceName)
+		{
+			throw new MissingAssemblyException(this);
+		}
+
+		public override void AddDelta(Stream stream, Stream ilStream)
 		{
 			throw new MissingAssemblyException(this);
 		}

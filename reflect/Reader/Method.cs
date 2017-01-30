@@ -58,7 +58,12 @@ namespace IKVM.Reflection.Reader
 				return null;
 			}
 			int rva = module.MethodDef.records[index].RVA;
-			return rva == 0 ? null : new MethodBody(module, rva, context);
+			if (rva == 0)
+				return null;
+			if (module.MethodDef.records[index].DeltaIndex > 0)
+				return new MethodBody(module, module.Deltas[module.MethodDef.records[index].DeltaIndex - 1].ilStream, rva, context);
+			else
+				return new MethodBody(module, module.GetStream(), module.RvaToFileOffset(rva), context);
 		}
 
 		public override int __MethodRVA

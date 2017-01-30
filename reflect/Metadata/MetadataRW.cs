@@ -33,6 +33,7 @@ namespace IKVM.Reflection.Metadata
 		internal readonly bool bigStrings;
 		internal readonly bool bigGuids;
 		internal readonly bool bigBlobs;
+		internal readonly bool bigTokens;
 		internal readonly bool bigResolutionScope;
 		internal readonly bool bigTypeDefOrRef;
 		internal readonly bool bigMemberRefParent;
@@ -55,19 +56,20 @@ namespace IKVM.Reflection.Metadata
 		internal readonly bool bigGenericParam;
 		internal readonly bool bigModuleRef;
 
-		protected MetadataRW(Module module, bool bigStrings, bool bigGuids, bool bigBlobs)
+		protected MetadataRW(Module module, bool bigStrings, bool bigGuids, bool bigBlobs, bool isCompressed)
 		{
 			this.bigStrings = bigStrings;
 			this.bigGuids = bigGuids;
 			this.bigBlobs = bigBlobs;
-			this.bigField = module.Field.IsBig;
-			this.bigMethodDef = module.MethodDef.IsBig;
-			this.bigParam = module.Param.IsBig;
-			this.bigTypeDef = module.TypeDef.IsBig;
-			this.bigProperty = module.Property.IsBig;
-			this.bigEvent = module.Event.IsBig;
-			this.bigGenericParam = module.GenericParam.IsBig;
-			this.bigModuleRef = module.ModuleRef.IsBig;
+			this.bigTokens = !isCompressed;
+			this.bigField = module.Field.IsBig || bigTokens;
+			this.bigMethodDef = module.MethodDef.IsBig || bigTokens;
+			this.bigParam = module.Param.IsBig || bigTokens;
+			this.bigTypeDef = module.TypeDef.IsBig || bigTokens;
+			this.bigProperty = module.Property.IsBig || bigTokens;
+			this.bigEvent = module.Event.IsBig || bigTokens;
+			this.bigGenericParam = module.GenericParam.IsBig || bigTokens;
+			this.bigModuleRef = module.ModuleRef.IsBig || bigTokens;
 			this.bigResolutionScope = IsBig(2, module.ModuleTable, module.ModuleRef, module.AssemblyRef, module.TypeRef);
 			this.bigTypeDefOrRef = IsBig(2, module.TypeDef, module.TypeRef, module.TypeSpec);
 			this.bigMemberRefParent = IsBig(3, module.TypeDef, module.TypeRef, module.ModuleRef, module.MethodDef, module.TypeSpec);
@@ -85,8 +87,10 @@ namespace IKVM.Reflection.Metadata
 			this.bigImplementation = IsBig(2, module.File, module.AssemblyRef, module.ExportedType);
 		}
 
-		private static bool IsBig(int bitsUsed, params Table[] tables)
+		private bool IsBig(int bitsUsed, params Table[] tables)
 		{
+			if (bigTokens)
+				return true;
 			int limit = 1 << (16 - bitsUsed);
 			foreach (Table table in tables)
 			{

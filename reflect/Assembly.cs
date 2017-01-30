@@ -73,6 +73,7 @@ namespace IKVM.Reflection
 		public abstract string[] GetManifestResourceNames();
 		public abstract ManifestResourceInfo GetManifestResourceInfo(string resourceName);
 		public abstract System.IO.Stream GetManifestResourceStream(string name);
+		public abstract void AddDelta(System.IO.Stream stream, System.IO.Stream ilStream);
 
 		internal abstract Type FindType(TypeName name);
 		internal abstract Type FindTypeIgnoreCase(TypeName lowerCaseName);

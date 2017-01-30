@@ -744,6 +744,11 @@ namespace IKVM.Reflection.Emit
 			throw new NotSupportedException();
 		}
 
+		public override void AddDelta(Stream stream, Stream ilStream)
+		{
+			throw new NotSupportedException();
+		}
+
 		public override bool IsDynamic
 		{
 			get { return true; }

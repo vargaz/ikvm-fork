@@ -36,8 +36,8 @@ namespace IKVM.Reflection.Reader
 		private readonly byte[] buffer = new byte[bufferLength];
 		private int pos = bufferLength;
 
-		internal MetadataReader(ModuleReader module, Stream stream, byte heapSizes)
-			: base(module, (heapSizes & 0x01) != 0, (heapSizes & 0x02) != 0, (heapSizes & 0x04) != 0)
+		internal MetadataReader(ModuleReader module, Stream stream, byte heapSizes, bool isCompressed)
+			: base(module, (heapSizes & 0x01) != 0, (heapSizes & 0x02) != 0, (heapSizes & 0x04) != 0, isCompressed)
 		{
 			this.stream = stream;
 		}

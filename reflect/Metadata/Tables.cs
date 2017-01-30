@@ -784,6 +784,8 @@ namespace IKVM.Reflection.Metadata
 			internal int Name;
 			internal int Signature;
 			internal int ParamList;
+			// 1 based index. Not stored on disk
+			internal int DeltaIndex;
 		}
 
 		internal override void Read(MetadataReader mr)

@@ -37,7 +37,7 @@ namespace IKVM.Reflection
 		private readonly int localVarSigTok;
 		private byte[] body;
 
-		internal MethodBody(ModuleReader module, int rva, IGenericContext context)
+		internal MethodBody(ModuleReader module, Stream stream, long fileOffset, IGenericContext context)
 		{
 			const byte CorILMethod_TinyFormat = 0x02;
 			const byte CorILMethod_FatFormat = 0x03;
@@ -49,8 +49,7 @@ namespace IKVM.Reflection
 
 			List<ExceptionHandlingClause> exceptionClauses = new List<ExceptionHandlingClause>();
 			List<LocalVariableInfo> locals = new List<LocalVariableInfo>();
-			Stream stream = module.GetStream();
-			module.SeekRVA(rva);
+			stream.Seek(fileOffset, SeekOrigin.Begin);
 			BinaryReader br = new BinaryReader(stream);
 			byte b = br.ReadByte();
 			if ((b & 3) == CorILMethod_TinyFormat)
